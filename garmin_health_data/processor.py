@@ -17,7 +17,7 @@ from xml.etree.ElementTree import ParseError as XMLParseError
 
 import defusedxml.ElementTree as ET
 import fitdecode
-from sqlalchemy import and_, delete, insert, select, text
+from sqlalchemy import and_, delete, insert, select, text, update
 from sqlalchemy.orm import Session
 
 from garmin_health_data.processor_helpers import Processor
@@ -3153,8 +3153,8 @@ class GarminProcessor(Processor):
         Process a RACE_PREDICTIONS file containing race time predictions.
 
         Extracts race prediction data and inserts them into the race_predictions table
-        with upsert logic. Manages the `latest` flag by setting previous records to
-        `latest`=false when new records with the same `user_id` are inserted.
+        with upsert logic. Refreshes same-day values and keeps `latest` on the newest
+        stored calendar date, independent of backfill processing order.
 
         :param file_path: Path to the RACE_PREDICTIONS JSON file.
         :param session: SQLAlchemy Session object.
@@ -3165,49 +3165,45 @@ class GarminProcessor(Processor):
         if not race_prediction_data:
             click.secho("⚠️ No race predictions data found.", fg="yellow")
             return
-        # Find all race predictions with `latest`=True for this user.
-        latest_race_predictions = (
-            session.execute(
-                select(RacePredictions).where(
-                    and_(
-                        RacePredictions.user_id == int(self.user_id),
-                        RacePredictions.latest,
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        user_id = int(self.user_id)
+        prediction = RacePredictions(
+            user_id=user_id,
+            date=self._parse_date_string(race_prediction_data["calendarDate"]),
+            time_5k=race_prediction_data.get("time5K"),
+            time_10k=race_prediction_data.get("time10K"),
+            time_half_marathon=race_prediction_data.get("timeHalfMarathon"),
+            time_marathon=race_prediction_data.get("timeMarathon"),
+            latest=False,
         )
-
-        # Extract race time predictions.
-        race_prediction = RacePredictions(
-            user_id=int(self.user_id),
-            date=self._parse_date_string(race_prediction_data.pop("calendarDate")),
-            time_5k=race_prediction_data.pop("time5K", None),
-            time_10k=race_prediction_data.pop("time10K", None),
-            time_half_marathon=race_prediction_data.pop("timeHalfMarathon", None),
-            time_marathon=race_prediction_data.pop("timeMarathon", None),
-            latest=True,
+        # Clear the partial unique index before assigning the newest calendar date.
+        # Backfills may be processed newest-first, and reruns can revise today's times.
+        session.execute(
+            update(RacePredictions)
+            .where(RacePredictions.user_id == user_id, RacePredictions.latest.is_(True))
+            .values(latest=False)
         )
-
-        # Set `latest`=False for previous latest race predictions.
-        if latest_race_predictions:
-            for record in latest_race_predictions:
-                record.latest = False
-            click.echo(
-                f"Setting `latest`=False for {len(latest_race_predictions)} previous "
-                f"latest race prediction record(s) for user ID {self.user_id}."
-            )
-            # Flush session to ensure the latest=False updates are committed
-            # before inserting the new record with latest=True.
-            session.flush()
-
-        # Then use insert-only logic with on conflict do nothing.
         upsert_model_instances(
             session=session,
-            model_instances=[race_prediction],
+            model_instances=[prediction],
             conflict_columns=["user_id", "date"],
-            on_conflict_update=False,
+            update_columns=[
+                "time_5k",
+                "time_10k",
+                "time_half_marathon",
+                "time_marathon",
+                "latest",
+            ],
+        )
+        newest = session.execute(
+            select(RacePredictions.date)
+            .where(RacePredictions.user_id == user_id)
+            .order_by(RacePredictions.date.desc())
+            .limit(1)
+        ).scalar_one()
+        session.execute(
+            update(RacePredictions)
+            .where(RacePredictions.user_id == user_id, RacePredictions.date == newest)
+            .values(latest=True)
         )
 
     def _persist_activity_metrics(

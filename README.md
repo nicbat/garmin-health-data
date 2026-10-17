@@ -883,3 +883,17 @@ Please feel free to submit a Pull Request.
 
 - **Issues**: [GitHub Issues](https://github.com/diegoscarabelli/garmin-health-data/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/diegoscarabelli/garmin-health-data/discussions)
+
+### Backfill race prediction history
+
+`RACE_PREDICTIONS` fetches daily estimates for the requested date range, using
+bounded requests for ranges longer than a year. To backfill only this data type:
+
+```bash
+garmin extract --data-types RACE_PREDICTIONS --start-date 2024-01-01 --end-date 2026-01-01
+```
+
+The end date is exclusive, as for other extracts. Repeating a date range refreshes
+same-day estimates; `latest` remains on the newest stored date even when importing
+older history. The database stores one estimate per calendar day, not every
+intra-day revision. The existing latest/monthly client API remains available.

@@ -226,10 +226,10 @@ class GarminDataRegistry:
             ),
             GarminDataType(
                 "RACE_PREDICTIONS",
-                "get_race_predictions",
-                APIMethodTimeParam.NO_DATE,
-                "/metrics-service/metrics/racepredictions/latest/{display_name}",
-                "Predicted running times based on current fitness level.",
+                "get_race_prediction_history",
+                APIMethodTimeParam.RANGE,
+                "/metrics-service/metrics/racepredictions/daily/{display_name}",
+                "Daily predicted running times across the requested date range.",
                 "🏁",
             ),
             GarminDataType(

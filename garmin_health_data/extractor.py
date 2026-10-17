@@ -294,6 +294,13 @@ def _split_running_tolerance_by_day(
     return by_day
 
 
+def _split_race_predictions_by_day(
+    payload: List[Dict[str, Any]],
+) -> Dict[date, Dict[str, Any]]:
+    """Write one daily prediction object, preserving legacy processor compatibility."""
+    return {date.fromisoformat(row["calendarDate"]): row for row in payload}
+
+
 # Registry of per-day splitters: data types listed here have their per-range API
 # responses split into one file per day before write. RANGE types not listed
 # write one file stamped with end_date (current behavior — appropriate when the
@@ -303,6 +310,7 @@ _PER_DAY_SPLITTERS: Dict[str, Callable[[Any], Dict[date, Any]]] = {
     "BODY_COMPOSITION": _split_body_composition_by_day,
     "ACTIVITIES_LIST": _split_activities_list_by_day,
     "RUNNING_TOLERANCE": _split_running_tolerance_by_day,
+    "RACE_PREDICTIONS": _split_race_predictions_by_day,
 }
 
 
@@ -842,7 +850,7 @@ class GarminExtractor:
             # Process no-date data. Wrap the call in _with_retries so
             # transient network failures absorb the same way they do for
             # DAILY (per-day) and RANGE (per-window) types; otherwise NO_DATE
-            # types (USER_PROFILE, PERSONAL_RECORDS, RACE_PREDICTIONS) would
+            # types (USER_PROFILE, PERSONAL_RECORDS) would
             # fail on the first DNS hiccup.
             click.echo(f"{data_type.emoji} Fetching {data_type.name.lower()} data.")
             api_method = getattr(self.garmin_client, data_type.api_method)

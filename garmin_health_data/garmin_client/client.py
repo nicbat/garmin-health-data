@@ -975,6 +975,12 @@ class GarminClient:
         """
         return api.get_race_predictions(self, startdate, enddate, _type)
 
+    def get_race_prediction_history(
+        self, startdate: str, enddate: str
+    ) -> List[Dict[str, Any]]:
+        """See :func:`api.get_race_prediction_history`."""
+        return api.get_race_prediction_history(self, startdate, enddate)
+
     def get_user_profile(self) -> Dict[str, Any]:
         """
         See :func:`api.get_user_profile`.

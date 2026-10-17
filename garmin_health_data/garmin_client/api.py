@@ -598,6 +598,43 @@ def get_race_predictions(
     raise ValueError("you must either provide all parameters or no parameters")
 
 
+def get_race_prediction_history(
+    client: "GarminClient", startdate: str, enddate: str
+) -> List[Dict[str, Any]]:
+    """Fetch inclusive daily prediction history in bounded, non-overlapping windows.
+
+    Keep the existing latest/monthly API intact. Propagate failed or malformed
+    responses so the extractor cannot mark an incomplete backfill as successful.
+    """
+    start = datetime.strptime(
+        _validate_date_format(startdate, "startdate"), _DATE_FORMAT_STR
+    ).date()
+    end = datetime.strptime(
+        _validate_date_format(enddate, "enddate"), _DATE_FORMAT_STR
+    ).date()
+    if start > end:
+        raise ValueError("startdate must not follow enddate")
+    result = {}
+    while start <= end:
+        stop = min(start + timedelta(days=365), end)
+        response = get_race_predictions(
+            client, start.isoformat(), stop.isoformat(), "daily"
+        )
+        if not isinstance(response, list):
+            raise ValueError("Expected a list of daily race predictions")
+        for row in response:
+            if not isinstance(row, dict):
+                raise ValueError("Expected a daily race prediction object")
+            day = datetime.strptime(
+                _validate_date_format(row.get("calendarDate"), "calendarDate"),
+                _DATE_FORMAT_STR,
+            ).date()
+            if start <= day <= stop:
+                result[day] = row
+        start = stop + timedelta(days=1)
+    return [result[day] for day in sorted(result)]
+
+
 def get_user_profile(client: "GarminClient") -> Dict[str, Any]:
     """
     Fetch the authenticated user's profile settings.
